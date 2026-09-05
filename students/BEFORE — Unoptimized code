@@ -1,0 +1,36 @@
+from django.contrib.auth.models import User
+from .models import Ride
+
+
+def get_ride_details():
+    rides = Ride.objects.all()
+
+    for ride in rides:
+
+        # Query inside the loop
+        driver = User.objects.get(
+            username=ride.driver
+        )
+
+        print(
+            ride.ride_id,
+            driver.username,
+            ride.status
+        )
+
+    # Duplicate query
+    total_rides = Ride.objects.count()
+
+    # Another database query
+    completed_rides = Ride.objects.filter(
+        status="completed"
+    ).count()
+
+    # Same query repeated
+    total_again = Ride.objects.count()
+
+    return {
+        "total": total_rides,
+        "completed": completed_rides,
+        "total_again": total_again,
+    }

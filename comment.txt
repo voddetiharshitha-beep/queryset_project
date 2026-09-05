@@ -1,0 +1,193 @@
+Django Aggregation API
+
+Implemented aggregation using Django ORM functions:
+
+1. Count() - Calculates total students/rides.
+2. Sum() - Calculates total earnings using fees_paid.
+3. Avg() - Calculates average fare using fees_paid.
+4. Max() - Finds the maximum fare.
+5. Min() - Finds the minimum fare.
+
+API Endpoint:
+GET /api/students/aggregation/
+
+Completed records:
+marks >= 40
+
+Cancelled records:
+marks < 40
+
+i used for aggregation and create apis
+from django.db import models
+
+
+class Student(models.Model):
+    name = models.CharField(max_length=100)
+    age = models.IntegerField()
+    course = models.CharField(max_length=100)
+    marks = models.IntegerField()
+    city = models.CharField(max_length=100)
+    fees_paid = models.IntegerField(default=0)
+    fees_total = models.IntegerField(default=10000)
+
+    def __str__(self):
+        return self.name
+
+
+class Ride(models.Model):
+    ride_id = models.CharField(max_length=50, unique=True)
+    driver = models.CharField(max_length=100)
+    status = models.CharField(max_length=20)
+    fare = models.DecimalField(max_digits=10, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.ride_id### N+1 Query Optimization
+
+BEFORE OPTIMIZATION
+-------------------
+
+The API used Ride.objects.all() and accessed the
+related driver inside a loop.
+
+This caused an additional database query for each ride.
+
+Example:
+
+1 query → fetch rides
+N queries → fetch each driver
+
+Total:
+1 + N queries
+
+
+AFTER OPTIMIZATION
+------------------
+
+The API was optimized using:
+
+select_related("driver_user")
+
+This loads the related driver together with the rides
+and removes the repeated database queries.
+
+Result:
+
+BEFORE → 1 + N queries
+AFTER  → approximately 1 query
+
+
+select_related()
+was used because driver_user is a ForeignKey.
+
+prefetch_related()
+is used for ManyToMany relationships and reverse
+ForeignKey relationships. 
+this is my n+1 query modelsfrom django.db import models
+from django.contrib.auth.models import User
+
+
+class Student(models.Model):
+    name = models.CharField(max_length=100)
+    age = models.IntegerField()
+    course = models.CharField(max_length=100)
+    marks = models.IntegerField()
+    city = models.CharField(max_length=100)
+    fees_paid = models.IntegerField(default=0)
+    fees_total = models.IntegerField(default=10000)
+
+    def __str__(self):
+        return self.name
+
+
+class Ride(models.Model):
+    ride_id = models.CharField(max_length=50, unique=True)
+
+    # Existing field - keep it
+    driver = models.CharField(max_length=100)
+
+    # New relationship for select_related()
+    driver_user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="rides",
+        null=True,
+        blank=True
+    )
+
+    status = models.CharField(max_length=20)
+    fare = models.DecimalField(max_digits=10, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.ride_id
+        # Query Performance Comparison Before and After Indexing
+
+## Before Indexing
+
+Before adding database indexes, frequently searched fields such as `status`, `driver`, and `created_at` did not have explicit indexes.
+
+For example:
+
+```python
+Ride.objects.filter(status="completed")
+```
+
+The database may need to scan a large number of rows to find matching records.
+
+## After Indexing
+
+After adding indexes to frequently searched fields:
+
+```python
+status
+created_at
+driver
+driver_user
+ride_id
+```
+
+the database can use the indexes to locate matching records more efficiently.
+
+For example:
+
+```python
+Ride.objects.filter(status="completed")
+```
+
+can use the `status` index.
+
+## Performance Comparison
+
+| Query                   | Before Indexing     | After Indexing          |
+| ----------------------- | ------------------- | ----------------------- |
+| Search by `status`      | Table scan possible | Index available         |
+| Search by `driver`      | Table scan possible | Index available         |
+| Search by `created_at`  | Table scan possible | Index available         |
+| Search by `driver_user` | Relationship lookup | Indexed ForeignKey      |
+| Search by `ride_id`     | Unique lookup       | Unique index/constraint |
+
+## Query Plan
+
+Django's `explain()` method was used to inspect the query plan:
+
+```python
+query = Ride.objects.filter(status="completed")
+print(query.explain())
+```
+
+After indexing, the query plan can show:
+
+```text
+USING INDEX
+```
+
+This confirms that the database is able to use an index for the query.
+
+## Conclusion
+
+Before indexing, searches on frequently queried fields could require the database to examine many rows.
+
+After indexing, the database can use indexes to locate matching records more efficiently.
+
+The performance benefit becomes more noticeable as the number of records increases. With a small SQLite database, the difference in execution time may be very small, so `EXPLAIN QUERY PLAN` is also useful for verifying index usage.
